@@ -1,0 +1,14 @@
+syntax = "proto2";
+
+package TestTask.Messages;
+ 
+
+message Request {
+	required string id = 1; //Идентификатор клиента
+	required int32 req = 2;
+}
+
+message Response {
+	required string id = 1; //Идентификатор клиента
+	required int32 res = 2;
+}
