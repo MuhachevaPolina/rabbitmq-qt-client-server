@@ -1,9 +1,16 @@
 #include <src/server/Server.h>
+#include <stdio.h>
 
-Server::Server() {}
+#include <iostream>
+#include <thread>
 
-void run(amqp_connection_state_t conn)
+Server::Server() { /*m_workers.push_back(std::make_shared<Worker>());*/ }
+
+void Server::run(amqp_connection_state_t conn)
 {
+  int received = 0;
+  // int previous_received = 0;
+
   amqp_frame_t frame;
 
   for(;;)
@@ -45,6 +52,12 @@ void run(amqp_connection_state_t conn)
                 {
                   return;
                 }
+                /*
+                printf("message body (%.*s): ", (int)message.body.len,
+                       (char*)message.body.bytes);
+                printf("%.*s\n", (int)message.body.len,
+                       (char*)message.body.bytes);
+                */
 
                 amqp_destroy_message(&message);
               }
@@ -72,8 +85,8 @@ void run(amqp_connection_state_t conn)
               return;
 
             default:
-              /* fprintf(stderr, "An unexpected method was received %u\n",
-                      frame.payload.method.id); */
+              fprintf(stderr, "An unexpected method was received %u\n",
+                      frame.payload.method.id);
               return;
           }
         }
@@ -81,7 +94,14 @@ void run(amqp_connection_state_t conn)
     }
     else
     {
+      printf(
+          "messsage (%.*s): ", (int)envelope.message.body.len,
+          (char*)envelope.message.body.bytes);
+      printf("%.*s\n", (int)envelope.message.body.len,
+             (char*)envelope.message.body.bytes);
+
       amqp_destroy_envelope(&envelope);
     }
+    received++;
   }
 }

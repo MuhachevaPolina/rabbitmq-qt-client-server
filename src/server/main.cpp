@@ -3,83 +3,77 @@
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
 
-#include <iostream>
-#include <stdexcept>
-#include <string>
-
-void check_amqp_error(amqp_rpc_reply_t reply, const std::string& context)
-{
-  if(reply.reply_type != AMQP_RESPONSE_NORMAL)
-  {
-    throw std::runtime_error(context + " failed; reply: " + std::to_string(reply.reply_type));
-  }
-}
+#include <stdlib.h>
+#include <stdio.h>
 
 int main(int argc, char const* const* argv)
 {
-  if(argc < 3)
-  {
-    std::cerr << "error: waiting for <host> <port> arguments input\n";
-    return 1;
-  }
+  Server server;
+  char const* hostname;
+  int port;
+  char const* exchange;
+  char const* bindingkey;
 
-  std::string hostname = argv[1];
-  int port = std::stoi(argv[2]);
+  amqp_bytes_t queuename;
 
-  std::string exchange = "amq.direct";
-  std::string bindingkey = "test queue";
+  hostname = argv[1];
+  port = atoi(argv[2]);
+  exchange = "amq.direct";   /* argv[3]; */
+  bindingkey = "test queue"; /* argv[4]; */
 
-  Server* server = new Server();
   amqp_connection_state_t conn = amqp_new_connection();
+  amqp_socket_t* socket = amqp_tcp_socket_new(conn);
 
-  try
+  if(!socket)
   {
-    amqp_socket_t* socket = amqp_tcp_socket_new(conn);
-    if(!socket)
-    {
-      throw std::runtime_error("error: creating TCP socket");
-    }
-
-    if(amqp_socket_open(socket, hostname.c_str(), port) != 0)
-    {
-      throw std::runtime_error("error: opening socket on " + hostname + ":" + std::to_string(port));
-    }
-
-    check_amqp_error(amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"), "login");
-
-    amqp_channel_open(conn, 1);
-    check_amqp_error(amqp_get_rpc_reply(conn), "open chan 1");
-
-    amqp_queue_declare_ok_t* r = amqp_queue_declare(conn, 1, amqp_empty_bytes, 0, 0, 0, 1, amqp_empty_table);
-    check_amqp_error(amqp_get_rpc_reply(conn), "create queue");
-
-    amqp_bytes_t queuename = amqp_bytes_malloc_dup(r->queue);
-    if(queuename.bytes == nullptr)
-    {
-      throw std::runtime_error("error: not enough free memory");
-    }
-
-    amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange.c_str()), amqp_cstring_bytes(bindingkey.c_str()), amqp_empty_table);
-    check_amqp_error(amqp_get_rpc_reply(conn), "queue binding");
-
-    amqp_basic_consume(conn, 1, queuename, amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
-    check_amqp_error(amqp_get_rpc_reply(conn), "listener start (Consume)");
-
-    server->run(conn);
-
-    amqp_bytes_free(queuename);
-    amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS);
-    amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
-    amqp_destroy_connection(conn);
-  }
-  catch(const std::exception& e)
-  {
-    std::cerr << "error: " << e.what() << std::endl;
-    amqp_destroy_connection(conn);
-    delete server;
+    fprintf(stderr, "can't create socket\n");
     return 1;
   }
 
-  delete server;
+  int status = amqp_socket_open(socket, hostname, port);
+  if(status < 0)
+  {
+    fprintf(stderr, "can't connect to %s:%d\n", hostname, port);
+    return 1;
+  }
+
+  amqp_rpc_reply_t login_reply = amqp_login(conn, "rabbitmq_qt", 0, AMQP_DEFAULT_FRAME_SIZE, 0,
+                 AMQP_SASL_METHOD_PLAIN, "rabbitmq_qt_user", "rabbitmqqt");
+
+  if(login_reply.reply_type != AMQP_RESPONSE_NORMAL)
+  {
+    fprintf(stderr, "login error, answer type is %d\n", login_reply.reply_type);
+    
+    if (login_reply.reply_type == AMQP_RESPONSE_SERVER_EXCEPTION) {
+        // broker rejected by itself
+        fprintf(stderr, "server error, AMQP ID 0x%X\n", login_reply.reply.id);
+    } else if (login_reply.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION) {
+        // network or lib error
+        fprintf(stderr, "lib error: %s\n", amqp_error_string2(login_reply.library_error));
+    }
+    return 1;
+  }
+
+  // open chan after login
+  amqp_channel_open_ok_t *ch_ok = amqp_channel_open(conn, 1);
+  amqp_rpc_reply_t ch_reply = amqp_get_rpc_reply(conn);
+  if (ch_reply.reply_type != AMQP_RESPONSE_NORMAL) {
+      fprintf(stderr, "can't open channel\n");
+      return 1;
+  }
+
+  amqp_queue_declare_ok_t* r = amqp_queue_declare(conn, 1, amqp_empty_bytes, 0,
+                                                  0, 0, 1, amqp_empty_table);
+  queuename = amqp_bytes_malloc_dup(r->queue);
+
+  amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange),
+                  amqp_cstring_bytes(bindingkey), amqp_empty_table);
+  amqp_basic_consume(conn, 1, queuename, amqp_empty_bytes, 0, 1, 0,
+                     amqp_empty_table);
+
+  server.run(conn);
+
+  amqp_bytes_free(queuename);
+
   return 0;
 }
