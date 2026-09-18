@@ -5,16 +5,26 @@
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
 
-#include <vector>
-#include <memory>
+#include <QThreadPool>
+
+#include <boost/asio.hpp>
 
 class Server
 {
 public:
   Server();
-  void run(amqp_connection_state_t conn);
+  void runThread(amqp_connection_state_t conn);
 
 private:
-
+  QThreadPool m_pool;
+  boost::asio::io_context m_context;
 };
- // 1. 1 worker with 1 thread and server with rabbitmq without client and serialization
+
+
+
+
+
+
+// 0. server and client exchange with rabbitmq without threads -- DONE
+// 1. 1 worker in threadpool on server -- DONE
+// 2. multiple workers acync with boost

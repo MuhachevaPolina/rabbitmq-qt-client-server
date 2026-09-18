@@ -2,16 +2,19 @@
 
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
+#include <QRunnable>
 
 #include <thread>
 #include <memory>
 
-class Worker
+class Worker: public QRunnable
 {
 public:
-  Worker();
-  bool doAccept(amqp_connection_state_t conn);
-  bool onAccept();
+  Worker(amqp_connection_state_t conn);
+  bool doAccept();
+
+  void run() override;
+  // bool onAccept();
 private:
-  // std::shared_ptr<std::thread> m_workerThread;
+  amqp_connection_state_t m_conn;
 };

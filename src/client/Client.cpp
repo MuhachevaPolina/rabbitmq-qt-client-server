@@ -1,8 +1,10 @@
 #include "Client.h"
 
+#include <iostream>
+
 #ifndef amqp_literal_bytes
 #define amqp_literal_bytes(str) \
-  (amqp_bytes_t) { sizeof(str) - 1, (void *)(str) }
+  (amqp_bytes_t) { sizeof(str) - 1, (void*)(str) }
 #endif
 
 Client::Client() {}
@@ -11,22 +13,21 @@ void Client::connect(int argc, char const* const* argv)
 {
   char const* hostname;
   int port, status;
-  int rate_limit;
   int message_count;
   amqp_socket_t* socket = NULL;
   amqp_connection_state_t conn;
 
-  if(argc < 5)
-  {
-    fprintf(stderr,
-            "Usage: amqp_producer host port rate_limit message_count\n");
-    // return 1;
-  }
+  char const* exchange;
+  char const* bindingkey;
+
+  amqp_bytes_t queuename;
 
   hostname = argv[1];
   port = atoi(argv[2]);
-  rate_limit = atoi(argv[3]);
-  message_count = atoi(argv[4]);
+  message_count = atoi(argv[3]);
+
+  exchange = "amq.direct";   /* argv[3]; */
+  bindingkey = "test queue"; /* argv[4]; */
 
   conn = amqp_new_connection();
 
@@ -42,81 +43,62 @@ void Client::connect(int argc, char const* const* argv)
     // die("opening TCP socket");
   }
 
-  /*die_on_amqp_error(amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN,
-                               "guest", "guest"),
-                    "Logging in");*/
+  amqp_rpc_reply_t login_reply =
+      amqp_login(conn, "rabbitmq_qt", 0, AMQP_DEFAULT_FRAME_SIZE, 0,
+                 AMQP_SASL_METHOD_PLAIN, "rabbitmq_qt_user", "rabbitmqqt");
 
-  amqp_channel_open(conn, 1);
-  // die_on_amqp_error(amqp_get_rpc_reply(conn), "Opening channel");
-
-  send_batch(conn, amqp_literal_bytes("test queue"), rate_limit, message_count);
-
-  /*die_on_amqp_error(amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS),
-                    "Closing channel");
-  die_on_amqp_error(amqp_connection_close(conn, AMQP_REPLY_SUCCESS),
-                    "Closing connection");
-  die_on_error(amqp_destroy_connection(conn), "Ending connection"); */
-}
-
-void Client::send_batch(amqp_connection_state_t conn,
-                              amqp_bytes_t queue_name, int rate_limit,
-                              int message_count)
-{
-  // uint64_t start_time = now_microseconds();
-  int i;
-  int sent = 0;
-  int previous_sent = 0;
-  // uint64_t previous_report_time = start_time;
-  // uint64_t next_summary_time = start_time + SUMMARY_EVERY_US;
-
-  char message[256];
-  amqp_bytes_t message_bytes;
-
-  for(i = 0; i < (int)sizeof(message); i++)
+  if(login_reply.reply_type != AMQP_RESPONSE_NORMAL)
   {
-    message[i] = i & 0xff;
+    fprintf(stderr, "login error, answer type is %d\n", login_reply.reply_type);
+
+    if(login_reply.reply_type == AMQP_RESPONSE_SERVER_EXCEPTION)
+    {
+      // broker rejected by itself
+      fprintf(stderr, "server error, AMQP ID 0x%X\n", login_reply.reply.id);
+    }
+    else if(login_reply.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION)
+    {
+      // network or lib error
+      fprintf(stderr, "lib error: %s\n",
+              amqp_error_string2(login_reply.library_error));
+    }
   }
 
-  message_bytes.len = sizeof(message);
-  message_bytes.bytes = message;
+  amqp_channel_open(conn, 1);
+
+  amqp_queue_declare_ok_t* r = amqp_queue_declare(conn, 1, amqp_empty_bytes, 0,
+                                                  0, 0, 1, amqp_empty_table);
+  queuename = amqp_bytes_malloc_dup(r->queue);
+
+  amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange),
+                  amqp_cstring_bytes(bindingkey), amqp_empty_table);
+
+  send_batch(conn, amqp_literal_bytes("test queue"), message_count);
+}
+
+void Client::send_batch(amqp_connection_state_t conn, amqp_bytes_t queue_name,
+                        int message_count)
+{
+  int i;
+
+  amqp_basic_properties_t props;
+  props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+  props.content_type = amqp_cstring_bytes("text/plain");
+  props.delivery_mode = 2;  // Persistent
+
+  amqp_bytes_t message_bytes = amqp_cstring_bytes("Hello, Server!");
 
   for(i = 0; i < message_count; i++)
   {
-    amqp_basic_publish(conn, 1, amqp_literal_bytes("amq.direct"), queue_name, 0,
-                       0, NULL, message_bytes);
-    // uint64_t now = now_microseconds();
-
-    /*die_on_error(amqp_basic_publish(conn, 1, amqp_literal_bytes("amq.direct"),
-                                    queue_name, 0, 0, NULL, message_bytes),
-                 "Publishing"); */
-    sent++;
-    /*
-    if (now > next_summary_time) {
-      int countOverInterval = sent - previous_sent;
-      double intervalRate =
-          countOverInterval / ((now - previous_report_time) / 1000000.0);
-      printf("%d ms: Sent %d - %d since last report (%d Hz)\n",
-             (int)(now - start_time) / 1000, sent, countOverInterval,
-             (int)intervalRate);
-
-      previous_sent = sent;
-      previous_report_time = now;
-      next_summary_time += SUMMARY_EVERY_US;
+    int res = amqp_basic_publish(conn, 1, amqp_literal_bytes("amq.direct"),
+                                 queue_name, 0, 0, NULL, message_bytes);
+    if(res == 0)
+    {
+      std::cout << "sent 'Hello, Server!' message" << std::endl;
     }
+    else
+    {
 
-    while (((i * 1000000.0) / (now - start_time)) > rate_limit) {
-      microsleep(2000);
-      now = now_microseconds();
     }
-      */
   }
-
-  // uint64_t stop_time = now_microseconds();
-  // int total_delta = (int)(stop_time - start_time);
-  /*
-  printf("PRODUCER - Message count: %d\n", message_count);
-  printf("Total time, milliseconds: %d\n", total_delta / 1000);
-  printf("Overall messages-per-second: %g\n",
-         (message_count / (total_delta / 1000000.0)));
-  */
 }

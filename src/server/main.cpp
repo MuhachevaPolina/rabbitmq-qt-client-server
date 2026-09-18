@@ -71,7 +71,7 @@ int main(int argc, char const* const* argv)
   amqp_basic_consume(conn, 1, queuename, amqp_empty_bytes, 0, 1, 0,
                      amqp_empty_table);
 
-  server.run(conn);
+  server.runThread(conn);
 
   amqp_bytes_free(queuename);
 
