@@ -13,6 +13,8 @@ class Server
 {
 public:
   Server();
+  void start();
+  void addConnection();
   void runThread(amqp_connection_state_t conn);
 
 private:

@@ -12,9 +12,10 @@ class Worker: public QRunnable
 public:
   Worker(amqp_connection_state_t conn);
   bool doAccept();
+  bool onAccept(amqp_connection_state_t conn, amqp_bytes_t queue_name,
+                        int message_count);
 
   void run() override;
-  // bool onAccept();
 private:
   amqp_connection_state_t m_conn;
 };

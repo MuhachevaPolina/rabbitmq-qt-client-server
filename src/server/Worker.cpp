@@ -1,6 +1,12 @@
 #include "Worker.h"
 
 #include <stdio.h>
+#include <iostream>
+
+#ifndef amqp_literal_bytes
+#define amqp_literal_bytes(str) \
+  (amqp_bytes_t) { sizeof(str) - 1, (void*)(str) }
+#endif
 
 Worker::Worker(amqp_connection_state_t conn): QRunnable(), m_conn(conn) {}
 
@@ -99,4 +105,29 @@ bool Worker::doAccept()
     }
     received++;
   }
+}
+
+bool Worker::onAccept(amqp_connection_state_t conn, amqp_bytes_t queue_name,
+                        int message_count)
+{
+  // int i;
+
+  amqp_basic_properties_t props;
+  props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+  props.content_type = amqp_cstring_bytes("text/plain");
+  props.delivery_mode = 2;  // Persistent
+
+  amqp_bytes_t message_bytes = amqp_cstring_bytes("Hello, Client!");
+
+
+    int res = amqp_basic_publish(conn, 1, amqp_literal_bytes("amq.direct"),
+                                 queue_name, 0, 0, NULL, message_bytes);
+    if(res == 0)
+    {
+      std::cout << "sent 'Hello, Client!' message" << std::endl;
+    }
+    else
+    {
+
+    }
 }
