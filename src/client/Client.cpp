@@ -18,16 +18,18 @@ void Client::connect(int argc, char const* const* argv)
   amqp_connection_state_t conn;
 
   char const* exchange;
-  char const* bindingkey;
+  char const* sentbindingkey;
+  char const* gotbindingkey;
 
-  amqp_bytes_t queuename;
+  // amqp_bytes_t queuename;
 
   hostname = argv[1];
   port = atoi(argv[2]);
   message_count = atoi(argv[3]);
 
   exchange = "amq.direct";   /* argv[3]; */
-  bindingkey = "test queue"; /* argv[4]; */
+  sentbindingkey = "request queue"; /* argv[4]; */
+  gotbindingkey = "answer queue";
 
   conn = amqp_new_connection();
 
@@ -66,18 +68,24 @@ void Client::connect(int argc, char const* const* argv)
 
   amqp_channel_open(conn, 1);
 
+  // Создаем временную очередь для ответов
   amqp_queue_declare_ok_t* r = amqp_queue_declare(conn, 1, amqp_empty_bytes, 0,
                                                   0, 0, 1, amqp_empty_table);
-  queuename = amqp_bytes_malloc_dup(r->queue);
+  m_gotQueueName = amqp_bytes_malloc_dup(r->queue);
+  m_sentQueueName = amqp_cstring_bytes("serverQueue"); // Очередь сервера
 
-  amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange),
-                  amqp_cstring_bytes(bindingkey), amqp_empty_table);
+  // Привязываем временную очередь клиента к ключу "answer queue"
+  amqp_queue_bind(conn, 1, m_gotQueueName, amqp_cstring_bytes(exchange),
+                  amqp_cstring_bytes(gotbindingkey), amqp_empty_table);
 
-  send_batch(conn, amqp_literal_bytes("test queue"), message_count);
+  // 🔴 Обязательно запускаем consume для очереди ответов ДО отправки batch
+  amqp_basic_consume(conn, 1, m_gotQueueName, amqp_empty_bytes, 0, 1, 0,
+                     amqp_empty_table);
+
+  send_batch(conn, message_count);
 }
 
-void Client::send_batch(amqp_connection_state_t conn, amqp_bytes_t queue_name,
-                        int message_count)
+void Client::send_batch(amqp_connection_state_t conn, int message_count)
 {
   int i;
 
@@ -90,39 +98,42 @@ void Client::send_batch(amqp_connection_state_t conn, amqp_bytes_t queue_name,
 
   for(i = 0; i < message_count; i++)
   {
+    // 🔴 Передаем &props вместо NULL, чтобы свойства применились
     int res = amqp_basic_publish(conn, 1, amqp_literal_bytes("amq.direct"),
-                                 queue_name, 0, 0, NULL, message_bytes);
+                                 m_sentQueueName, 0, 0, &props, message_bytes);
     if(res == 0)
     {
       std::cout << "sent 'Hello, Server!' message" << std::endl;
     }
-    else
-    {
+  }
 
-    }
+  bool ret = getAnswer(conn, message_count);
+  if(ret)
+  {
+    std::cout << "success" << std::endl;
   }
 }
 
-bool Client::getAnswer()
+bool Client::getAnswer(amqp_connection_state_t conn, int message_count)
 {
   int received = 0;
 
   amqp_frame_t frame;
 
-  for(;;)
+  for(int i = 0; i < message_count; ++i)
   {
     amqp_rpc_reply_t ret;
     amqp_envelope_t envelope;
 
-    amqp_maybe_release_buffers(m_conn);
-    ret = amqp_consume_message(m_conn, &envelope, NULL, 0);
+    amqp_maybe_release_buffers(conn);
+    ret = amqp_consume_message(conn, &envelope, NULL, 0);
 
     if(AMQP_RESPONSE_NORMAL != ret.reply_type)
     {
       if(AMQP_RESPONSE_LIBRARY_EXCEPTION == ret.reply_type &&
          AMQP_STATUS_UNEXPECTED_STATE == ret.library_error)
       {
-        if(AMQP_STATUS_OK != amqp_simple_wait_frame(m_conn, &frame))
+        if(AMQP_STATUS_OK != amqp_simple_wait_frame(conn, &frame))
         {
           return false;
         }
@@ -143,7 +154,7 @@ bool Client::getAnswer()
                */
               {
                 amqp_message_t message;
-                ret = amqp_read_message(m_conn, frame.channel, &message, 0);
+                ret = amqp_read_message(conn, frame.channel, &message, 0);
                 if(AMQP_RESPONSE_NORMAL != ret.reply_type)
                 {
                   return false;
@@ -166,11 +177,11 @@ bool Client::getAnswer()
               return false;
 
             case AMQP_CONNECTION_CLOSE_METHOD:
-              /* a m_connection.close method happens when a m_connection exception
+              /* a connection.close method happens when a connection exception
                * occurs, this can happen by trying to use a channel that isn't
                * open for example.
                *
-               * In this case the whole m_connection must be restarted.
+               * In this case the whole connection must be restarted.
                */
               return false;
 
@@ -184,13 +195,16 @@ bool Client::getAnswer()
     }
     else
     {
-      printf("messsage (%.*s): ", (int)envelope.message.body.len,
+      printf("server messsage is %.*s ", (int)envelope.message.body.len,
              (char*)envelope.message.body.bytes);
+             /*
       printf("%.*s\n", (int)envelope.message.body.len,
              (char*)envelope.message.body.bytes);
+             */
 
       amqp_destroy_envelope(&envelope);
     }
     received++;
   }
+  return true;
 }

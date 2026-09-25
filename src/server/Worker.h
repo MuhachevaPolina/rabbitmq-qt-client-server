@@ -10,12 +10,14 @@
 class Worker: public QRunnable
 {
 public:
-  Worker(amqp_connection_state_t conn);
+  Worker(amqp_connection_state_t conn, amqp_bytes_t queue_name, char const* requestbindingkey);
   bool doAccept();
-  bool onAccept(amqp_connection_state_t conn, amqp_bytes_t queue_name,
-                        int message_count);
+  bool onAccept(amqp_connection_state_t conn, amqp_bytes_t queue_name);
 
   void run() override;
 private:
   amqp_connection_state_t m_conn;
+  amqp_bytes_t m_queue_name;
+  char const* m_requestbindingkey;
+  char const* m_reply_key;
 };

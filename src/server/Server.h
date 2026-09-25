@@ -12,7 +12,7 @@
 class Server
 {
 public:
-  Server();
+  Server(amqp_bytes_t queue_name, char const* requestbindingkey);
   void start();
   void addConnection();
   void runThread(amqp_connection_state_t conn);
@@ -20,6 +20,8 @@ public:
 private:
   QThreadPool m_pool;
   boost::asio::io_context m_context;
+  amqp_bytes_t m_queue_name;
+  char const* m_reply_key;
 };
 
 

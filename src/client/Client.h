@@ -11,9 +11,10 @@ class Client
 public:
   Client();
   void connect(int argc, char const* const* argv);
-  void send_batch(amqp_connection_state_t conn, amqp_bytes_t queue_name,
+  void send_batch(amqp_connection_state_t conn,
                       int message_count);
-  bool getAnswer();
+  bool getAnswer(amqp_connection_state_t conn, int message_count);
 private:
-
+    amqp_bytes_t m_gotQueueName;
+    amqp_bytes_t m_sentQueueName;
 };
