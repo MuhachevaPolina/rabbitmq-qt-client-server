@@ -1,4 +1,6 @@
-#include <src/server/Server.h>
+#include "Server.h"
+#include "Config.h"
+#include "Logger.h"
 
 #include <amqp.h>
 #include <amqp_tcp_socket.h>

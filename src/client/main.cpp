@@ -1,8 +1,16 @@
-#include "Client.h"
+#include <QApplication>
+#include "MainWindow.h"
+#include "Logger.h"
 
-int main(int argc, char const* const* argv)
+int main(int argc, char *argv[])
 {
-  Client client;
-  client.connect(argc, argv);
-  return 0;
+    QApplication app(argc, argv);
+    app.setApplicationName("RabbitMQClient");
+
+    Logger::instance().init("client.log", LogLevel::Info);
+
+    MainWindow window;
+    window.show();
+
+    return app.exec();
 }
