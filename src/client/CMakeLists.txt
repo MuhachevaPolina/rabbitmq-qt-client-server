@@ -6,6 +6,8 @@ add_executable(rabbitmq_client
     MainWindow.cpp
     SettingsDialog.h
     SettingsDialog.cpp
+    ClientWorker.h
+    ClientWorker.cpp
 )
 
 target_link_libraries(rabbitmq_client PRIVATE

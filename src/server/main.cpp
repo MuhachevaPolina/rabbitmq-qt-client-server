@@ -2,85 +2,86 @@
 #include "Config.h"
 #include "Logger.h"
 
-#include <amqp.h>
-#include <amqp_tcp_socket.h>
+#include <QCoreApplication>
+#include <QFileInfo>
+#include <QDir>
+#include <csignal>
 
-#include <stdlib.h>
-#include <stdio.h>
+static Server* g_serverInstance = nullptr;
 
-int main(int argc, char const* const* argv)
+void handleSignal(int signum)
 {
-  char const* hostname;
-  int port;
-  char const* exchange;
-  char const* answerbindingkey;
-  char const* requestbindingkey;
-
-  amqp_bytes_t queuename;
-
-  hostname = argv[1];
-  port = atoi(argv[2]);
-  exchange = "amq.direct";   /* argv[3]; */
-  answerbindingkey = "request queue"; /* argv[4]; */
-  requestbindingkey = "answer queue";
-
-  amqp_connection_state_t conn = amqp_new_connection();
-  amqp_socket_t* socket = amqp_tcp_socket_new(conn);
-
-  if(!socket)
-  {
-    fprintf(stderr, "can't create socket\n");
-    return 1;
-  }
-
-  int status = amqp_socket_open(socket, hostname, port);
-  if(status < 0)
-  {
-    fprintf(stderr, "can't connect to %s:%d\n", hostname, port);
-    return 1;
-  }
-
-  amqp_rpc_reply_t login_reply = amqp_login(conn, "rabbitmq_qt", 0, AMQP_DEFAULT_FRAME_SIZE, 0,
-                 AMQP_SASL_METHOD_PLAIN, "rabbitmq_qt_user", "rabbitmqqt");
-
-  if(login_reply.reply_type != AMQP_RESPONSE_NORMAL)
-  {
-    fprintf(stderr, "login error, answer type is %d\n", login_reply.reply_type);
-    
-    if (login_reply.reply_type == AMQP_RESPONSE_SERVER_EXCEPTION) {
-        // broker rejected by itself
-        fprintf(stderr, "server error, AMQP ID 0x%X\n", login_reply.reply.id);
-    } else if (login_reply.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION) {
-        // network or lib error
-        fprintf(stderr, "lib error: %s\n", amqp_error_string2(login_reply.library_error));
+    LOG_INFO(QString("Получен сигнал завершения (%1). Остановка сервера...").arg(signum));
+    if (g_serverInstance) {
+        g_serverInstance->stop();
     }
-    return 1;
-  }
+}
 
-  // open chan after login
-  amqp_channel_open_ok_t *ch_ok = amqp_channel_open(conn, 1);
-  amqp_rpc_reply_t ch_reply = amqp_get_rpc_reply(conn);
-  if (ch_reply.reply_type != AMQP_RESPONSE_NORMAL) 
-  {
-      fprintf(stderr, "can't open channel\n");
-      return 1;
-  }
+int main(int argc, char* argv[])
+{
+    QCoreApplication app(argc, argv);
 
-  amqp_bytes_t serverQueueName = amqp_cstring_bytes("serverQueue");
-  amqp_queue_declare_ok_t* r = amqp_queue_declare(conn, 1, serverQueueName, 0,
-                                                  0, 0, 1, amqp_empty_table);
-  // queuename = amqp_bytes_malloc_dup(r->queue);
+    // 1. Определение пути к конфигурационному файлу (аргумент argv[1] или configs/server.ini)
+    QString configPath = "configs/server.ini";
+    if (argc > 1) {
+        configPath = QString::fromUtf8(argv[1]);
+    }
 
-  Server server(serverQueueName, requestbindingkey);
+    // Если файл не найден по указанному пути, проверяем относительно папки приложения
+    if (!QFileInfo::exists(configPath)) {
+        QString altPath1 = QDir::current().filePath("../configs/server.ini");
+        QString altPath2 = QCoreApplication::applicationDirPath() + "/../../../configs/server.ini";
+        QString altPath3 = QCoreApplication::applicationDirPath() + "/../../configs/server.ini";
+        if (QFileInfo::exists(altPath1)) {
+            configPath = altPath1;
+        } else if (QFileInfo::exists(altPath2)) {
+            configPath = altPath2;
+        } else if (QFileInfo::exists(altPath3)) {
+            configPath = altPath3;
+        }
+    }
 
-  amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange),
-                  amqp_cstring_bytes(answerbindingkey), amqp_empty_table);
-  amqp_basic_consume(conn, 1, queuename, amqp_empty_bytes, 0, 1, 0,
-                     amqp_empty_table);
+    // 2. Чтение конфигурации
+    Config config;
+    if (!config.load(configPath)) {
+        LOG_WARN(QString("Конфигурационный файл '%1' не найден. Применяются параметры по умолчанию.")
+            .arg(configPath));
+    }
 
-  server.runThread(conn);
+    // 3. Инициализация глобального логгера
+    Logger::instance().init(config.logging().logPath, config.logging().logLevel);
 
-  amqp_bytes_free(queuename);
+    LOG_INFO("==================================================");
+    LOG_INFO("Запуск RabbitMQ Qt Server (rabbitmq_server v1.0)");
+    LOG_INFO(QString("Конфиг:          %1").arg(configPath));
+    LOG_INFO(QString("RabbitMQ Хост:   %1:%2").arg(config.broker().host).arg(config.broker().port));
+    LOG_INFO(QString("Virtual Host:    %1").arg(config.broker().vhost));
+    LOG_INFO(QString("Пользователь:    %1").arg(config.broker().username));
+    LOG_INFO(QString("Exchange:        %1 (direct)").arg(config.broker().exchange));
+    LOG_INFO(QString("Очередь:         %1").arg(config.broker().requestQueue));
+    LOG_INFO(QString("Файл логов:      %1 (уровень: %2)")
+        .arg(config.logging().logPath)
+        .arg(Logger::levelToString(config.logging().logLevel)));
+    LOG_INFO("==================================================");
 
-  return 0;
+    // 4. Регистрация обработчиков сигналов завершения (SIGINT, SIGTERM)
+    std::signal(SIGINT, handleSignal);
+    std::signal(SIGTERM, handleSignal);
+
+    // 5. Инициализация и запуск сервера
+    Server server(config);
+    g_serverInstance = &server;
+
+    if (!server.init()) {
+        LOG_ERROR("Ошибка инициализации сервера и подключения к RabbitMQ. Завершение работы.");
+        g_serverInstance = nullptr;
+        return 1;
+    }
+
+    LOG_INFO("Сервер готов к приему запросов от клиентов.");
+    server.run();
+
+    g_serverInstance = nullptr;
+    LOG_INFO("Сервер корректно остановлен.");
+    return 0;
 }
