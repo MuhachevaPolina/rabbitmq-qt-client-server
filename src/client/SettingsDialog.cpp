@@ -27,13 +27,18 @@ void SettingsDialog::setupUi()
     QFormLayout* brokerLayout = new QFormLayout(brokerGroup);
 
     m_hostEdit = new QLineEdit(this);
+    m_hostEdit->setObjectName("hostEdit");
     m_portSpin = new QSpinBox(this);
+    m_portSpin->setObjectName("portSpin");
     m_portSpin->setRange(1, 65535);
     m_portSpin->setValue(5672);
 
     m_vhostEdit = new QLineEdit(this);
+    m_vhostEdit->setObjectName("vhostEdit");
     m_userEdit = new QLineEdit(this);
+    m_userEdit->setObjectName("userEdit");
     m_passwordEdit = new QLineEdit(this);
+    m_passwordEdit->setObjectName("passwordEdit");
     m_passwordEdit->setEchoMode(QLineEdit::Password);
 
     brokerLayout->addRow("Хост:", m_hostEdit);
@@ -48,7 +53,9 @@ void SettingsDialog::setupUi()
     QFormLayout* logLayout = new QFormLayout(logGroup);
 
     m_logPathEdit = new QLineEdit(this);
+    m_logPathEdit->setObjectName("logPathEdit");
     m_logLevelCombo = new QComboBox(this);
+    m_logLevelCombo->setObjectName("logLevelCombo");
     m_logLevelCombo->addItems({"DEBUG", "INFO", "WARN", "ERROR"});
 
     logLayout->addRow("Путь к логу:", m_logPathEdit);
@@ -57,6 +64,7 @@ void SettingsDialog::setupUi()
 
     // Dialog buttons: Save / Cancel
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+    m_buttonBox->setObjectName("buttonBox");
     mainLayout->addWidget(m_buttonBox);
 }
 
