@@ -4,13 +4,13 @@
 
 int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
-    app.setApplicationName("RabbitMQClient");
+  QApplication app(argc, argv);
+  app.setApplicationName("RabbitMQClient");
 
-    Logger::instance().init("client.log", LogLevel::Info);
+  Logger::instance().init("client.log", LogLevel::Info);
 
-    MainWindow window;
-    window.show();
+  MainWindow window;
+  window.show();
 
-    return app.exec();
+  return app.exec();
 }

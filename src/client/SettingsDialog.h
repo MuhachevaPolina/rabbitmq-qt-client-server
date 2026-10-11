@@ -8,30 +8,30 @@
 #include "Config.h"
 
 class SettingsDialog : public QDialog {
-    Q_OBJECT
+  Q_OBJECT
 
 public:
-    explicit SettingsDialog(Config& config, QWidget *parent = nullptr);
-    ~SettingsDialog() override = default;
+  explicit SettingsDialog(Config& config, QWidget *parent = nullptr);
+  ~SettingsDialog() override = default;
 
 private slots:
-    void onSaveClicked();
+  void onSaveClicked();
 
 private:
-    void setupUi();
-    void loadToUi();
-    void saveFromUi();
+  void setupUi();
+  void loadToUi();
+  void saveFromUi();
 
-    Config& m_config;
+  Config& m_config;
 
-    QLineEdit* m_hostEdit = nullptr;
-    QSpinBox* m_portSpin = nullptr;
-    QLineEdit* m_vhostEdit = nullptr;
-    QLineEdit* m_userEdit = nullptr;
-    QLineEdit* m_passwordEdit = nullptr;
+  QLineEdit* m_hostEdit = nullptr;
+  QSpinBox* m_portSpin = nullptr;
+  QLineEdit* m_vhostEdit = nullptr;
+  QLineEdit* m_userEdit = nullptr;
+  QLineEdit* m_passwordEdit = nullptr;
 
-    QLineEdit* m_logPathEdit = nullptr;
-    QComboBox* m_logLevelCombo = nullptr;
+  QLineEdit* m_logPathEdit = nullptr;
+  QComboBox* m_logLevelCombo = nullptr;
 
-    QDialogButtonBox* m_buttonBox = nullptr;
+  QDialogButtonBox* m_buttonBox = nullptr;
 };
